@@ -1,5 +1,9 @@
 # NeoDeck
 
+> **Home Ops development fork.** Upstream: [justynroberts/NeoDeck](https://github.com/justynroberts/NeoDeck).
+> This fork adds focused terminal rendering for `å ä ö Å Ä Ö` using NeoDeck's
+> existing custom-glyph mechanism. It is not full Unicode terminal support.
+
 A full-featured **SSH client firmware** for the LilyGo **T-Deck Plus** (ESP32-S3 +
 BlackBerry-style keyboard + trackball + 320×240 ST7789). Stored connection
 profiles, a real cursor-addressable terminal over [libssh](https://www.libssh.org/),

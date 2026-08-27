@@ -95,9 +95,9 @@ static uint8_t curFg   = 7;                // current foreground palette index
 static uint8_t curBg   = 0;                // current background palette index
 static bool    curBold = false;
 
-// Powerline glyphs have no font coverage (Unicode PUA), so we decode them from
-// the UTF-8 stream into these sentinel bytes (< 0x20, never real text) and draw
-// them as vectors. The text byte holds the id; the color cell holds fg/bg.
+// Glyphs without font coverage are decoded from the UTF-8 stream into these
+// sentinel bytes (< 0x20, never real text) and drawn in one terminal cell. The
+// text byte holds the id; the color cell holds fg/bg.
 enum {
   GL_RSOLID = 1,  // U+E0B0  right-pointing filled separator
   GL_RTHIN  = 2,  // U+E0B1  right-pointing thin separator
@@ -106,6 +106,12 @@ enum {
   GL_BRANCH = 5,  // U+E0A0  git branch
   GL_LINE   = 6,  // U+E0A1  line number (LN)
   GL_LOCK   = 7,  // U+E0A2  padlock (read-only)
+  GL_ARING_UPPER = 8,
+  GL_ADIA_UPPER  = 9,
+  GL_ODIA_UPPER  = 10,
+  GL_ARING_LOWER = 11,
+  GL_ADIA_LOWER  = 12,
+  GL_ODIA_LOWER  = 13,
 };
 static char plGlyph(uint32_t cp) {
   switch (cp) {
@@ -113,6 +119,18 @@ static char plGlyph(uint32_t cp) {
     case 0xE0B2: return GL_LSOLID; case 0xE0B3: return GL_LTHIN;
     case 0xE0A0: return GL_BRANCH; case 0xE0A1: return GL_LINE;
     case 0xE0A2: return GL_LOCK;   default:     return 0;
+  }
+}
+
+static char unicodeGlyph(uint32_t cp) {
+  switch (cp) {
+    case 0x00C5: return GL_ARING_UPPER;  // Å
+    case 0x00C4: return GL_ADIA_UPPER;   // Ä
+    case 0x00D6: return GL_ODIA_UPPER;   // Ö
+    case 0x00E5: return GL_ARING_LOWER;  // å
+    case 0x00E4: return GL_ADIA_LOWER;   // ä
+    case 0x00F6: return GL_ODIA_LOWER;   // ö
+    default:     return plGlyph(cp);
   }
 }
 
@@ -417,11 +435,11 @@ static void termFeed(const String& data) {
     if (esc == 4) { esc = 0; continue; }     // charset designator byte
     if (esc == 5) { esc = 0; continue; }     // backslash of an ST terminator
 
-    // UTF-8 assembly (Powerline glyphs and other multibyte sequences).
+    // UTF-8 assembly (custom terminal glyphs and other multibyte sequences).
     if (u8need > 0) {
       if ((c & 0xC0) == 0x80) {
         u8cp = (u8cp << 6) | (c & 0x3F);
-        if (--u8need == 0) { char g = plGlyph(u8cp); if (g) putGlyph(g); }
+        if (--u8need == 0) { char g = unicodeGlyph(u8cp); if (g) putGlyph(g); }
         continue;
       }
       u8need = 0;
@@ -447,8 +465,26 @@ static void termFeed(const String& data) {
   termDirty = true;
 }
 
-// Draw a single Powerline glyph in a 6x9 cell at (x,y).
+// Nordic glyph bitmaps are five pixels wide, leaving the terminal cell's sixth
+// column as spacing, just like the built-in compact text font.
+static const uint8_t kNordicGlyphs[][9] = {
+  { 0x04, 0x0A, 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, // Å
+  { 0x0A, 0x00, 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 }, // Ä
+  { 0x0A, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E }, // Ö
+  { 0x04, 0x0A, 0x04, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F }, // å
+  { 0x0A, 0x00, 0x00, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F }, // ä
+  { 0x0A, 0x00, 0x00, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E }, // ö
+};
+
+// Draw a single custom glyph in a 6x9 cell at (x,y).
 static void drawGlyph(char id, int x, int y, uint16_t fg) {
+  if (id >= GL_ARING_UPPER && id <= GL_ODIA_LOWER) {
+    const uint8_t* rows = kNordicGlyphs[id - GL_ARING_UPPER];
+    for (int row = 0; row < 9; row++)
+      for (int col = 0; col < 5; col++)
+        if (rows[row] & (0x10 >> col)) tft.drawPixel(x + col, y + row, fg);
+    return;
+  }
   switch (id) {
     case GL_RSOLID: tft.fillTriangle(x, y, x, y + 8, x + 6, y + 4, fg); break;
     case GL_LSOLID: tft.fillTriangle(x + 6, y, x + 6, y + 8, x, y + 4, fg); break;
@@ -474,7 +510,7 @@ static void drawTLine(const TLine& ln, int y) {
     uint8_t packed = ln.c[i];
     uint16_t fg = kPal[packed & 0x0F];
     uint16_t bg = kPal[(packed >> 4) & 0x0F];
-    if ((uint8_t)ln.t[i] < 0x20) {            // Powerline glyph cell
+    if ((uint8_t)ln.t[i] < 0x20) {            // custom glyph cell
       tft.fillRect(x, y, 6, 9, bg);
       drawGlyph(ln.t[i], x, y, fg);
       x += 6; i++;
